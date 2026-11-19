@@ -22,16 +22,73 @@ function isListItem(token: Token): boolean {
   return !!token && token.type === "list_item_open";
 }
 
+// Lists converted by an earlier checkbox item are still lists, so they match too.
 function isListOpen(token: Token): boolean {
   return (
-    token.type === "bullet_list_open" || token.type === "ordered_list_open"
+    token.type === "bullet_list_open" ||
+    token.type === "ordered_list_open" ||
+    token.type === "checkbox_list_open"
   );
 }
 
 function isListClose(token: Token): boolean {
   return (
-    token.type === "bullet_list_close" || token.type === "ordered_list_close"
+    token.type === "bullet_list_close" ||
+    token.type === "ordered_list_close" ||
+    token.type === "checkbox_list_close"
   );
+}
+
+/**
+ * Finds the index of the list open token that encloses the token at `from`,
+ * skipping over any sibling lists that have already been closed.
+ */
+function findEnclosingListOpen(
+  tokens: Token[],
+  from: number,
+  level: number
+): number {
+  let depth = 0;
+  for (let k = from; k >= 0; k--) {
+    if (tokens[k].level !== level) {
+      continue;
+    }
+    if (isListClose(tokens[k])) {
+      depth++;
+    } else if (isListOpen(tokens[k])) {
+      if (depth === 0) {
+        return k;
+      }
+      depth--;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Finds the index of the list close token that encloses the token at `from`,
+ * skipping over any nested lists that are opened and closed in between.
+ */
+function findEnclosingListClose(
+  tokens: Token[],
+  from: number,
+  level: number
+): number {
+  let depth = 0;
+  for (let k = from; k < tokens.length; k++) {
+    if (tokens[k].level !== level) {
+      continue;
+    }
+    if (isListOpen(tokens[k])) {
+      depth++;
+    } else if (isListClose(tokens[k])) {
+      if (depth === 0) {
+        return k;
+      }
+      depth--;
+    }
+  }
+  return -1;
 }
 
 function looksLikeChecklist(tokens: Token[], index: number) {
@@ -76,17 +133,13 @@ export default function markdownItCheckbox(md: MarkdownIt): void {
         // convert the enclosing list tokens, which may not be adjacent when
         // the checkbox item is preceded by plain items or contains nested lists.
         const listLevel = tokens[i - 2].level - 1;
-        for (let k = i - 3; k >= 0; k--) {
-          if (tokens[k].level === listLevel && isListOpen(tokens[k])) {
-            tokens[k].type = "checkbox_list_open";
-            break;
-          }
+        const listOpen = findEnclosingListOpen(tokens, i - 3, listLevel);
+        if (listOpen !== -1) {
+          tokens[listOpen].type = "checkbox_list_open";
         }
-        for (let k = i + 1; k < tokens.length; k++) {
-          if (tokens[k].level === listLevel && isListClose(tokens[k])) {
-            tokens[k].type = "checkbox_list_close";
-            break;
-          }
+        const listClose = findEnclosingListClose(tokens, i + 1, listLevel);
+        if (listClose !== -1) {
+          tokens[listClose].type = "checkbox_list_close";
         }
 
         // remove [ ] [x] from list item label – must use the content from the

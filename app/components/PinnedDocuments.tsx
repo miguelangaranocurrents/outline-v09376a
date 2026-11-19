@@ -82,7 +82,9 @@ function PinnedDocuments({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        delay: 100,
+        // Holding the pointer briefly should still count as a click, so the
+        // drag only activates after a deliberate long press.
+        delay: 300,
         tolerance: 5,
       },
     }),
